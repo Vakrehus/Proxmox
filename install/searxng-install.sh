@@ -14,7 +14,6 @@ source <(curl -s https://raw.githubusercontent.com/Vakrehus/Proxmox/main/misc/bu
 # Variables
 SCRIPT_VERSION="1.0"
 SCRIPT_AUTHOR="Vakrehus"
-GITHUB_REPO="https://raw.githubusercontent.com/Vakrehus/Proxmox/main/install"
 
 # Define some colors
 GREEN='\033[0;32m'
@@ -44,9 +43,6 @@ CTSWAP="512"
 CTNETWORK="eth0"
 CTBRIDGE="vmbr0"
 CTIP=""
-
-# Repo URL for build script
-SearXNG_SCRIPT="${GITHUB_REPO}/searxng-build.sh"
 
 # Header
 clear
@@ -82,11 +78,139 @@ basic_setup
 # Get container IP
 CTIP=$(pct exec "$CTID" ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
 
-# Download and execute build script in container
-msg "Downloading and executing build script..."
+# Create the build script directly in the container
+msg "Creating and executing build script..."
+cat > /tmp/build.sh <<'EOBUILD'
+#!/bin/bash
 
-# Create temp script in container and execute it
-pct exec "$CTID" -- bash -c "curl -s $SearXNG_SCRIPT -o /tmp/build.sh && chmod +x /tmp/build.sh && bash /tmp/build.sh"
+# Color definitions
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+# Function to print messages in green
+print_green() {
+    echo -e "${GREEN}$1${NC}"
+}
+
+# Function to print messages in red
+print_red() {
+    echo -e "${RED}$1${NC}"
+}
+
+# Main installation
+echo "Starting SearXNG installation..."
+
+# Update and install packages
+apt update
+apt upgrade -y
+apt install -y redis-server git python3-pip python3-venv build-essential \
+    python3-dev libffi-dev libssl-dev whiptail python3-yaml
+
+# Create user and directories
+useradd -r -s /bin/false searxng
+mkdir -p /usr/local/searxng /etc/searxng
+chown searxng:searxng /usr/local/searxng /etc/searxng
+
+# Clone repository
+if [ -d "/usr/local/searxng/searxng-src" ]; then
+    cd /usr/local/searxng/searxng-src
+    sudo -u searxng git pull
+else
+    sudo -u searxng git clone https://github.com/searxng/searxng.git /usr/local/searxng/searxng-src
+fi
+
+# Setup Python environment
+sudo -u searxng python3 -m venv /usr/local/searxng/searx-pyenv
+source /usr/local/searxng/searx-pyenv/bin/activate
+pip install --upgrade pip setuptools wheel
+pip install pyyaml
+pip install -e /usr/local/searxng/searxng-src
+
+# Generate configuration
+SECRET_KEY=$(openssl rand -hex 32)
+
+cat <<EOL > /etc/searxng/settings.yml
+# SearXNG settings
+use_default_settings: true
+general:
+  debug: false
+  instance_name: "SearXNG"
+  privacypolicy_url: false
+  contact_url: false
+server:
+  bind_address: "0.0.0.0"
+  port: 8888
+  secret_key: "${SECRET_KEY}"
+  limiter: true
+  image_proxy: true
+redis:
+  url: "redis://127.0.0.1:6379/0"
+ui:
+  static_use_hash: true
+enabled_plugins:
+  - 'Hash plugin'
+  - 'Self Information'
+  - 'Tracker URL remover'
+  - 'Ahmia blacklist'
+search:
+  safe_search: 2
+  autocomplete: 'google'
+engines:
+  - name: google
+    engine: google
+    shortcut: gg
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+  - name: github
+    engine: github
+    shortcut: gh
+EOL
+
+chown searxng:searxng /etc/searxng/settings.yml
+chmod 640 /etc/searxng/settings.yml
+
+# Create service file
+cat <<EOL > /etc/systemd/system/searxng.service
+[Unit]
+Description=SearXNG service
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=searxng
+Group=searxng
+Environment="SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml"
+ExecStart=/usr/local/searxng/searx-pyenv/bin/python -m searx.webapp
+WorkingDirectory=/usr/local/searxng/searxng-src
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOL
+
+# Start services
+systemctl daemon-reload
+systemctl enable --now redis-server
+sleep 2
+systemctl enable --now searxng
+
+# Display configuration
+echo -e "\nInstallation complete! Configuration summary:"
+echo -e "${RED}Secret Key: $SECRET_KEY${NC}"
+echo -e "${RED}Bind Address: 0.0.0.0${NC}"
+echo -e "${RED}Port: 8888${NC}"
+echo -e "${RED}Redis URL: redis://127.0.0.1:6379/0${NC}"
+echo -e "${RED}Debug Mode: false${NC}"
+EOBUILD
+
+# Execute the build script in the container
+pct exec "$CTID" -- bash -c "cat > /root/build.sh < /tmp/build.sh && chmod +x /root/build.sh && bash /root/build.sh"
 
 # Summary and instructions
 msg "SearXNG LXC container has been created!"
