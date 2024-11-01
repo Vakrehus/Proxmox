@@ -1,78 +1,107 @@
-# Verify installation
-verify_installation() {
-    print_green "Verifying installation..."
-    
-    # Check if Redis is running
-    if ! systemctl is-active --quiet redis-server; then
-        print_red "Redis is not running"
-        exit 1
-    fi
+#!/usr/bin/env bash
+# Copyright (c) 2024 Vakrehus
+# Author: Vakrehus
 
-    # Check if SearXNG is running
-    if ! systemctl is-active --quiet searxng; then
-        print_red "SearXNG is not running"
-        exit 1
-    fi
+# Setup script environment
+set -o errexit  # Exit if any command fails
+set -o errtrace # Exit if error in any pipe
+set -o nounset  # Exit if undefined variable
+set -o pipefail # Exit if pipe fails
 
-    # Check if port is listening
-    if ! netstat -tuln | grep -q ":8888 "; then
-        print_red "Port 8888 is not listening"
-        exit 1
-    fi
+# Import build function
+source <(curl -s https://raw.githubusercontent.com/Vakrehus/Proxmox/main/misc/build.func)
+
+# Variables
+SCRIPT_VERSION="1.0"
+SCRIPT_AUTHOR="Vakrehus"
+GITHUB_REPO="https://raw.githubusercontent.com/Vakrehus/Proxmox/main/install"
+
+# Define some colors
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+# Function to print messages in green
+print_green() {
+    echo -e "${GREEN}$1${NC}"
 }
 
-# Display actual configuration values
-display_config() {
-    print_green "\nInstallation complete! Configuration summary:"
-    
-    # Read values from settings.yml using grep and awk
-    local SECRET_KEY=$(grep 'secret_key' /etc/searxng/settings.yml | awk -F': ' '{print $2}' | tr -d '"')
-    local BIND_ADDRESS=$(grep 'bind_address' /etc/searxng/settings.yml | awk -F': ' '{print $2}' | tr -d '"')
-    local PORT=$(grep '  port' /etc/searxng/settings.yml | awk -F': ' '{print $2}')
-    local REDIS_URL=$(grep 'url' /etc/searxng/settings.yml | grep 'redis' | awk -F': ' '{print $2}' | tr -d '"')
-    local DEBUG_MODE=$(grep 'debug' /etc/searxng/settings.yml | head -1 | awk -F': ' '{print $2}')
-
-    # Display the actual values
-    print_red "Secret Key: ${SECRET_KEY}"
-    print_red "Bind Address: ${BIND_ADDRESS}"
-    print_red "Port: ${PORT}"
-    print_red "Redis URL: ${REDIS_URL}"
-    print_red "Debug Mode: ${DEBUG_MODE}"
+# Function to print messages in red
+print_red() {
+    echo -e "${RED}$1${NC}"
 }
 
-# Main installation
-main() {
-    # Install dependencies
-    install_dependencies
+# Define container values
+CTNAME="searxng"
+CTID=$(pvesh get /cluster/nextid)
+CTOSTYPE="debian"
+CTOSVERSION="bookworm"
+CTHOSTNAME="searxng-server"
+CTSIZE="8G"
+CTCORES="2"
+CTMEMORY="2048"
+CTSWAP="512"
+CTNETWORK="eth0"
+CTBRIDGE="vmbr0"
+CTIP=""
 
-    # Setup user and directories
-    setup_user_dirs
+# Repo URL for build script
+SearXNG_SCRIPT="${GITHUB_REPO}/searxng-build.sh"
 
-    # Clone repository
-    print_green "Cloning SearXNG repository..."
-    if [ -d "/usr/local/searxng/searxng-src" ]; then
-        cd /usr/local/searxng/searxng-src
-        sudo -u searxng git pull
-    else
-        sudo -u searxng git clone https://github.com/searxng/searxng.git /usr/local/searxng/searxng-src
-    fi
-    check_command "Repository clone"
+# Header
+clear
+cat <<"EOF"
+    ____                 __  ___   ______
+   / __/___  ____ ______\ \/ / | / / __ \
+  / /_/ __ \/ __ `/ ___/\  /  |/ / / / /
+ / __/ /_/ / /_/ / /    / / /|  / /_/ /
+/_/  \____/\__,_/_/    /_/_/ |_/\____/
 
-    # Setup Python environment
-    setup_python_env
+EOF
 
-    # Generate configuration
-    generate_config
+# Show script info
+printf "${GREEN}%s${NC}\n" "SearXNG LXC Container Install Script"
+printf "${GREEN}%s${NC}\n" "Script Version: $SCRIPT_VERSION"
+printf "${GREEN}%s${NC}\n" "Author: $SCRIPT_AUTHOR"
+printf "\n"
 
-    # Setup service
-    setup_service
+# Display script info
+header_info
 
-    # Verify installation
-    verify_installation
+print_green "Creating LXC container for SearXNG..."
 
-    # Display actual configuration
-    display_config
-}
+# Create container
+create_lxc
 
-# Run main installation
-main
+# Start container
+start_lxc
+
+# Setup OS
+basic_setup
+
+# Get container IP
+CTIP=$(pct exec "$CTID" ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+
+# Download and execute build script in container
+msg "Downloading and executing build script..."
+
+# Create temp script in container and execute it
+pct exec "$CTID" -- bash -c "curl -s $SearXNG_SCRIPT -o /tmp/build.sh && chmod +x /tmp/build.sh && bash /tmp/build.sh"
+
+# Summary and instructions
+msg "SearXNG LXC container has been created!"
+print_red "Container ID: $CTID"
+print_red "Container IP: $CTIP"
+print_red "Container Name: $CTNAME"
+print_red "Container Hostname: $CTHOSTNAME"
+print_red "Container Size: $CTSIZE"
+print_red "Container Memory: $CTMEMORY"
+print_red "Container Swap: $CTSWAP"
+print_red "Container Cores: $CTCORES"
+print_green "\nYou can now access SearXNG at http://${CTIP}:8888"
+print_green "Installation is complete! You can connect to the container with:"
+print_green "pct enter $CTID"
+
+# Done
+echo -e "\n${GREEN}Done!${NC}\n"
+exit 0
