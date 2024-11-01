@@ -11,7 +11,7 @@ set -o pipefail # Exit if pipe fails
 # Define some colors
 GREEN='\033[0;32m'
 RED='\033[0;31m'
-YW='\033[33m'  # Adding yellow for header
+YW='\033[33m'
 NC='\033[0m'
 
 # Function to print messages in green
@@ -22,6 +22,11 @@ print_green() {
 # Function to print messages in red
 print_red() {
     echo -e "${RED}$1${NC}"
+}
+
+# Function to print messages
+msg() {
+    echo -e "${GREEN}$1${NC}"
 }
 
 # Function to display header info
@@ -42,32 +47,24 @@ EOF
     echo ""
 }
 
-# Import build function
-source <(curl -s https://raw.githubusercontent.com/Vakrehus/Proxmox/main/misc/build.func) || {
-    print_red "Could not load build.func, loading local functions..."
+# Basic LXC functions
+create_lxc() {
+    msg "Creating LXC container..."
+    pct create "$CTID" "local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst" \
+        -arch amd64 -cores "$CTCORES" -hostname "$CTHOSTNAME" -memory "$CTMEMORY" \
+        -features nesting=1 -onboot 1 -swap "$CTSWAP" \
+        -storage local-lvm -net0 name=eth0,bridge=vmbr0,ip=dhcp
+}
 
-    msg() {
-        echo -e "${GREEN}$1${NC}"
-    }
+start_lxc() {
+    msg "Starting LXC container..."
+    pct start "$CTID"
+    sleep 3
+}
 
-    create_lxc() {
-        msg "Creating LXC container..."
-        pct create "$CTID" "local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst" \
-            -arch amd64 -cores "$CTCORES" -hostname "$CTHOSTNAME" -memory "$CTMEMORY" \
-            -features nesting=1 -onboot 1 -swap "$CTSWAP" \
-            -storage local-lvm -net0 name=eth0,bridge=vmbr0,ip=dhcp
-    }
-
-    start_lxc() {
-        msg "Starting LXC container..."
-        pct start "$CTID"
-        sleep 3
-    }
-
-    basic_setup() {
-        msg "Running basic setup..."
-        pct exec "$CTID" -- bash -c "apt-get update && apt-get -y upgrade"
-    }
+basic_setup() {
+    msg "Running basic setup..."
+    pct exec "$CTID" -- bash -c "apt-get update && apt-get -y upgrade"
 }
 
 # Variables
