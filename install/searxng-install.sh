@@ -29,24 +29,6 @@ msg() {
     echo -e "${GREEN}$1${NC}"
 }
 
-# Function to display header info
-header_info() {
-    clear
-    cat <<"EOF"
-    ____                 __  ___   ______
-   / __/___  ____ ______\ \/ / | / / __ \
-  / /_/ __ \/ __ `/ ___/\  /  |/ / / / /
- / __/ /_/ / /_/ / /    / / /|  / /_/ /
-/_/  \____/\__,_/_/    /_/_/ |_/\____/
-
-EOF
-    
-    echo -e "${GREEN}SearXNG LXC Container Install Script${NC}"
-    echo -e "${GREEN}Script Version: ${YW}1.0${NC}"
-    echo -e "${GREEN}Author: ${YW}Vakrehus${NC}"
-    echo ""
-}
-
 # Basic LXC functions
 create_lxc() {
     msg "Creating LXC container..."
@@ -85,8 +67,20 @@ CTNETWORK="eth0"
 CTBRIDGE="vmbr0"
 CTIP=""
 
-# Display script info
-header_info
+# Clear screen
+clear
+
+# Display header
+echo "    ____                 __  ___   ______"
+echo "   / __/___  ____ ______\ \/ / | / / __ \\"
+echo "  / /_/ __ \/ __ \`/ ___/\  /  |/ / / / /"
+echo " / __/ /_/ / /_/ / /    / / /|  / /_/ /"
+echo "/_/  \____/\__,_/_/    /_/_/ |_/\____/"
+echo ""
+echo -e "${GREEN}SearXNG LXC Container Install Script${NC}"
+echo -e "${GREEN}Script Version: ${YW}1.0${NC}"
+echo -e "${GREEN}Author: ${YW}Vakrehus${NC}"
+echo ""
 
 print_green "Creating LXC container for SearXNG..."
 
