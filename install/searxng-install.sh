@@ -8,16 +8,10 @@ set -o errtrace # Exit if error in any pipe
 set -o nounset  # Exit if undefined variable
 set -o pipefail # Exit if pipe fails
 
-# Import build function
-source <(curl -s https://raw.githubusercontent.com/Vakrehus/Proxmox/main/misc/build.func)
-
-# Variables
-SCRIPT_VERSION="1.0"
-SCRIPT_AUTHOR="Vakrehus"
-
 # Define some colors
 GREEN='\033[0;32m'
 RED='\033[0;31m'
+YW='\033[33m'  # Adding yellow for header
 NC='\033[0m'
 
 # Function to print messages in green
@@ -29,6 +23,56 @@ print_green() {
 print_red() {
     echo -e "${RED}$1${NC}"
 }
+
+# Function to display header info
+header_info() {
+    clear
+    cat <<"EOF"
+    ____                 __  ___   ______
+   / __/___  ____ ______\ \/ / | / / __ \
+  / /_/ __ \/ __ `/ ___/\  /  |/ / / / /
+ / __/ /_/ / /_/ / /    / / /|  / /_/ /
+/_/  \____/\__,_/_/    /_/_/ |_/\____/
+
+EOF
+    
+    echo -e "${GREEN}SearXNG LXC Container Install Script${NC}"
+    echo -e "${GREEN}Script Version: ${YW}1.0${NC}"
+    echo -e "${GREEN}Author: ${YW}Vakrehus${NC}"
+    echo ""
+}
+
+# Import build function
+source <(curl -s https://raw.githubusercontent.com/Vakrehus/Proxmox/main/misc/build.func) || {
+    print_red "Could not load build.func, loading local functions..."
+
+    msg() {
+        echo -e "${GREEN}$1${NC}"
+    }
+
+    create_lxc() {
+        msg "Creating LXC container..."
+        pct create "$CTID" "local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst" \
+            -arch amd64 -cores "$CTCORES" -hostname "$CTHOSTNAME" -memory "$CTMEMORY" \
+            -features nesting=1 -onboot 1 -swap "$CTSWAP" \
+            -storage local-lvm -net0 name=eth0,bridge=vmbr0,ip=dhcp
+    }
+
+    start_lxc() {
+        msg "Starting LXC container..."
+        pct start "$CTID"
+        sleep 3
+    }
+
+    basic_setup() {
+        msg "Running basic setup..."
+        pct exec "$CTID" -- bash -c "apt-get update && apt-get -y upgrade"
+    }
+}
+
+# Variables
+SCRIPT_VERSION="1.0"
+SCRIPT_AUTHOR="Vakrehus"
 
 # Define container values
 CTNAME="searxng"
@@ -43,23 +87,6 @@ CTSWAP="512"
 CTNETWORK="eth0"
 CTBRIDGE="vmbr0"
 CTIP=""
-
-# Header
-clear
-cat <<"EOF"
-    ____                 __  ___   ______
-   / __/___  ____ ______\ \/ / | / / __ \
-  / /_/ __ \/ __ `/ ___/\  /  |/ / / / /
- / __/ /_/ / /_/ / /    / / /|  / /_/ /
-/_/  \____/\__,_/_/    /_/_/ |_/\____/
-
-EOF
-
-# Show script info
-printf "${GREEN}%s${NC}\n" "SearXNG LXC Container Install Script"
-printf "${GREEN}%s${NC}\n" "Script Version: $SCRIPT_VERSION"
-printf "${GREEN}%s${NC}\n" "Author: $SCRIPT_AUTHOR"
-printf "\n"
 
 # Display script info
 header_info
